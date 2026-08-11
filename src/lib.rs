@@ -184,7 +184,7 @@ impl ICDFSampler16 {
     /// |f_interp - f_ref| / (1/2 * (|f_interp| + |f_ref|) + eps).
     ///
     /// See `new_with_error_fn`.
-    pub fn new_with_symmetric_mean_relative_error(x: &[f64], cdf: &[f64]) -> (Self, f32) {
+    pub fn new_from_symmetric_mean_relative_errors(x: &[f64], cdf: &[f64]) -> (Self, f32) {
         Self::new_with_error_fn(x, cdf, |f_interp, f_ref| {
             (f_interp - f_ref).abs() / (0.5 * (f_interp.abs() + f_ref.abs()) + Self::EPS)
         })
@@ -196,7 +196,7 @@ impl ICDFSampler16 {
     /// to the symmetric mean relative error function.
     ///
     /// See `new_with_error_fn`.
-    pub fn new_with_symmetric_max_relative_error(x: &[f64], cdf: &[f64]) -> (Self, f32) {
+    pub fn new_from_symmetric_max_relative_errors(x: &[f64], cdf: &[f64]) -> (Self, f32) {
         Self::new_with_error_fn(x, cdf, |f_interp, f_ref| {
             (f_interp - f_ref).abs() / (f_interp.abs().max(f_ref.abs()) + Self::EPS)
         })

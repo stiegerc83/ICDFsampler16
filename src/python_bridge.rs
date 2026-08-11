@@ -10,7 +10,8 @@ pub struct PyICDFSampler16(ICDFSampler16);
 impl PyICDFSampler16 {
     #[new]
     pub fn new(x: Vec<f64>, cdf: Vec<f64>) -> Self {
-        Self(ICDFSampler16::from_cdf(&x, &cdf))
+        let (sampler, _) = ICDFSampler16::new_from_symmetric_mean_relative_errors(&x, &cdf);
+        Self(sampler)
     }
 
     pub fn sample(&self, probe: u16) -> f32 {
