@@ -129,14 +129,24 @@ impl ICDFSampler16 {
     /// 32 bins with 32 points each + 1 for padding the last bin.
     const MAX_GRID_SIZE: usize = 32 * 32 + 1;
 
-    pub fn from_cdf(x: &[f64], cdf: &[f64]) -> Self {
+    /// Stability parameter for error functions.
+    const EPS: f32 = 1e-4;
+
+    /// Creates a new sampler on the basis of a cumulative distribution function
+    /// given as `(x, cdf)`; using a custom `err_fn` to generate the weights
+    /// during the automatic determination of the ideal number of data points
+    /// per bin.
+    pub fn new_with_error_fn<F>(x: &[f64], cdf: &[f64], err_fn: F) -> Self
+    where
+        F: Fn(f32, f32) -> f32,
+    {
         // Get the inverse cumulative distribution function resampled on a uniform grid.
         let cdf_inv = Self::get_cdf_inv(x, cdf);
 
         // Get weights for each bin and allowed number of points using the error function
         // |f_interp - f_ref| at each interpolated point. These errors are summed up to
         // for a weight.
-        let weights = Self::get_error_weights(&cdf_inv, |f_interp, f_ref| (f_interp - f_ref).abs());
+        let weights = Self::get_error_weights(&cdf_inv, err_fn);
 
         // Get the optimized number of points in each bin
         let (bin_npts, _) = Self::get_bin_npts(&weights);
@@ -162,6 +172,28 @@ impl ICDFSampler16 {
         vals[256] = cdf_inv[1024];
 
         Self { indexing, vals }
+    }
+
+    /// Creates a new sampler using the symmetrix mean relative error function:
+    /// |f_interp - f_ref| / (1/2 * (|f_interp| + |f_ref|) + eps).
+    ///
+    /// See `new_with_error_fn`.
+    pub fn new_with_symmetric_mean_relative_error(x: &[f64], cdf: &[f64]) -> Self {
+        Self::new_with_error_fn(x, cdf, |f_interp, f_ref| {
+            (f_interp - f_ref).abs() / (0.5 * (f_interp.abs() + f_ref.abs()) + Self::EPS)
+        })
+    }
+
+    /// Creates a new sampler using the symmetrix max relative error function:
+    /// |f_interp - f_ref| / (max(|f_interp|, |f_ref|) + eps).
+    /// This function is more robust for errors with very small numbers compared
+    /// to the symmetric mean relative error function.
+    ///
+    /// See `new_with_error_fn`.
+    pub fn new_with_symmetric_max_relative_error(x: &[f64], cdf: &[f64]) -> Self {
+        Self::new_with_error_fn(x, cdf, |f_interp, f_ref| {
+            (f_interp - f_ref).abs() / (f_interp.abs().max(f_ref.abs()) + Self::EPS)
+        })
     }
 
     /// Computes the inverse Cumulative Distribution Function F^-1(u) (`cdf_inv`)
@@ -370,7 +402,7 @@ impl ICDFSampler16 {
         let start_idx = unsafe { *self.indexing.get_unchecked(bin_idx as usize) };
         let interp_bits = unsafe { *self.indexing.get_unchecked(bin_idx as usize + 1) };
         debug_assert!(
-            6 <= interp_bits && interp_bits <= 11,
+            (6..=11).contains(&interp_bits),
             "6 <= interp_bits({interp_bits}) <= 11 violated"
         );
 
@@ -621,10 +653,10 @@ mod tests {
     }
 
     #[test]
-    fn test_sampler_from_cdf() {
+    fn test_sampler_with_direct_error() {
         let (x, f, variance) = normalized_gaussian(10_000);
         let cdf = cdf_from_distribution(&x, &f).unwrap();
-        let sampler = ICDFSampler16::from_cdf(&x, &cdf);
+        let sampler = ICDFSampler16::new_with_symmetric_mean_relative_error(&x, &cdf);
 
         // Indices must grow in correspondence with the number of points in
         // each bin, i.e. the sum of `2^pow`...
