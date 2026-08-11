@@ -184,7 +184,7 @@ impl ICDFSampler16 {
     /// |f_interp - f_ref| / (1/2 * (|f_interp| + |f_ref|) + eps).
     ///
     /// See `new_with_error_fn`.
-    pub fn new_from_symmetric_mean_relative_errors(x: &[f64], cdf: &[f64]) -> (Self, f32) {
+    pub fn from_symmetric_mean_relative_errors(x: &[f64], cdf: &[f64]) -> (Self, f32) {
         Self::new_with_error_fn(x, cdf, |f_interp, f_ref| {
             (f_interp - f_ref).abs() / (0.5 * (f_interp.abs() + f_ref.abs()) + Self::EPS)
         })
@@ -196,7 +196,7 @@ impl ICDFSampler16 {
     /// to the symmetric mean relative error function.
     ///
     /// See `new_with_error_fn`.
-    pub fn new_from_symmetric_max_relative_errors(x: &[f64], cdf: &[f64]) -> (Self, f32) {
+    pub fn from_symmetric_max_relative_errors(x: &[f64], cdf: &[f64]) -> (Self, f32) {
         Self::new_with_error_fn(x, cdf, |f_interp, f_ref| {
             (f_interp - f_ref).abs() / (f_interp.abs().max(f_ref.abs()) + Self::EPS)
         })
@@ -660,7 +660,7 @@ mod tests {
     fn test_sampler_with_direct_error() {
         let (x, f) = normalized_gaussian(10_000);
         let cdf = cdf_from_distribution(&x, &f).unwrap();
-        let (sampler, total_err) = ICDFSampler16::new_with_symmetric_mean_relative_error(&x, &cdf);
+        let (sampler, total_err) = ICDFSampler16::from_symmetric_mean_relative_errors(&x, &cdf);
 
         // We will insist the total error is not more than 5% for all the values
         // vs the input cdf resampled. Note: there is always already some error
