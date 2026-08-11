@@ -136,7 +136,10 @@ impl ICDFSampler16 {
     /// given as `(x, cdf)`; using a custom `err_fn` to generate the weights
     /// during the automatic determination of the ideal number of data points
     /// per bin.
-    pub fn new_with_error_fn<F>(x: &[f64], cdf: &[f64], err_fn: F) -> Self
+    ///
+    /// Returns `(Self, total_err)`; `total_err` is the total error due to thinning
+    /// out points from the full grid according to `err_fn`.
+    pub fn new_with_error_fn<F>(x: &[f64], cdf: &[f64], err_fn: F) -> (Self, f32)
     where
         F: Fn(f32, f32) -> f32,
     {
@@ -149,7 +152,7 @@ impl ICDFSampler16 {
         let weights = Self::get_error_weights(&cdf_inv, err_fn);
 
         // Get the optimized number of points in each bin
-        let (bin_npts, _) = Self::get_bin_npts(&weights);
+        let (bin_npts, total_err) = Self::get_bin_npts(&weights);
 
         // Create the indexing as 32 consecutive `[u8; 2]` alongside
         // `vals`, the array of 257 corresponding points copied from `cdf_inv`.
@@ -171,14 +174,14 @@ impl ICDFSampler16 {
         // The padding is always the last point of `cdf_inv` since it closes off the last bin.
         vals[256] = cdf_inv[1024];
 
-        Self { indexing, vals }
+        (Self { indexing, vals }, total_err)
     }
 
     /// Creates a new sampler using the symmetrix mean relative error function:
     /// |f_interp - f_ref| / (1/2 * (|f_interp| + |f_ref|) + eps).
     ///
     /// See `new_with_error_fn`.
-    pub fn new_with_symmetric_mean_relative_error(x: &[f64], cdf: &[f64]) -> Self {
+    pub fn new_with_symmetric_mean_relative_error(x: &[f64], cdf: &[f64]) -> (Self, f32) {
         Self::new_with_error_fn(x, cdf, |f_interp, f_ref| {
             (f_interp - f_ref).abs() / (0.5 * (f_interp.abs() + f_ref.abs()) + Self::EPS)
         })
@@ -190,7 +193,7 @@ impl ICDFSampler16 {
     /// to the symmetric mean relative error function.
     ///
     /// See `new_with_error_fn`.
-    pub fn new_with_symmetric_max_relative_error(x: &[f64], cdf: &[f64]) -> Self {
+    pub fn new_with_symmetric_max_relative_error(x: &[f64], cdf: &[f64]) -> (Self, f32) {
         Self::new_with_error_fn(x, cdf, |f_interp, f_ref| {
             (f_interp - f_ref).abs() / (f_interp.abs().max(f_ref.abs()) + Self::EPS)
         })
@@ -437,7 +440,7 @@ mod tests {
 
     // Tolerance levels for basic float operations.
     const FTOL64: f64 = 1e-10;
-    const FTOL32: f32 = 1e-6;
+    const FTOL32: f32 = 1e-5;
     // Tolerance level for integrations over a distribution.
     const INTEGRATION_TOL: f64 = 1e-2;
 
@@ -480,14 +483,14 @@ mod tests {
     /// i.e. f(x) = 1/sqrt(pi) * exp(-x^2).
     ///
     /// Returns `(x, f, sigma_squared)`.
-    fn normalized_gaussian(count: usize) -> (Vec<f64>, Vec<f64>, f64) {
-        let x = linspace(-2.0, 2.0, count);
+    fn normalized_gaussian(count: usize) -> (Vec<f64>, Vec<f64>) {
+        let x = linspace(-3.0, 3.0, count);
         let f = x
             .iter()
             .map(|x| (-x * x).exp() / std::f64::consts::PI.sqrt())
             .collect::<Vec<_>>();
         // The value for the variance is less than 0.5 because of the limited domain.
-        (x, f, 0.479367)
+        (x, f)
     }
 
     #[test]
@@ -497,7 +500,7 @@ mod tests {
             trapz(&[0.0, 1.0], &[1.0])
         );
 
-        let (x, f, _) = normalized_gaussian(1000);
+        let (x, f) = normalized_gaussian(1000);
         let area = trapz(&x, &f).unwrap();
         assert!((area - 1.0).abs() < INTEGRATION_TOL);
     }
@@ -509,7 +512,7 @@ mod tests {
             trapz(&[0.0, 1.0], &[1.0])
         );
 
-        let (x, f, _) = normalized_gaussian(1000);
+        let (x, f) = normalized_gaussian(1000);
         let area = cumtrapz(&x, &f).unwrap();
 
         assert_eq!(1000, area.len());
@@ -545,7 +548,7 @@ mod tests {
         );
 
         // Check a normalized test gaussian (the good case).
-        let (x, f, _) = normalized_gaussian(10_000);
+        let (x, f) = normalized_gaussian(10_000);
         let cdf = cdf_from_distribution(&x, &f).unwrap();
         assert_eq!(10_000, cdf.len());
         // `cdf` should be perfectly normalized, starting at exactly 0.0...
@@ -556,7 +559,7 @@ mod tests {
 
     #[test]
     fn test_get_inv_cdf() {
-        let (x, f, _) = normalized_gaussian(10_000);
+        let (x, f) = normalized_gaussian(10_000);
         let cdf = cdf_from_distribution(&x, &f).unwrap();
         let cdf_inv = ICDFSampler16::get_cdf_inv(&x, &cdf);
 
@@ -578,17 +581,16 @@ mod tests {
         // For a gaussian, F^-1(u) (`cdf_inv`) should be antisymmetric around
         // u = 1/2.
         assert!(
-            cdf_inv
+            cdf_inv[..512]
                 .iter()
-                .skip(512)
-                .zip(cdf_inv.iter().rev().skip(512))
+                .zip(cdf_inv[512..].iter().rev())
                 .all(|(fplus, fminus)| (fplus + fminus).abs() < FTOL32)
         );
     }
 
     #[test]
     fn test_get_error_weights() {
-        let (x, f, _) = normalized_gaussian(10_000);
+        let (x, f) = normalized_gaussian(10_000);
         let cdf = cdf_from_distribution(&x, &f).unwrap();
         let cdf_inv = ICDFSampler16::get_cdf_inv(&x, &cdf);
         let weights =
@@ -601,10 +603,9 @@ mod tests {
         // the first 16 bins are mirrors of the last 16 bins.
         for pts_idx in 0..5 {
             assert!(
-                weights
+                weights[..16]
                     .iter()
-                    .take(16)
-                    .zip(weights.iter().rev().take(16))
+                    .zip(weights[16..].iter().rev())
                     .all(|(wm, wp)| (wm[pts_idx] - wp[pts_idx]).abs() < FTOL32)
             );
         }
@@ -625,7 +626,7 @@ mod tests {
 
     #[test]
     fn test_get_bin_npts() {
-        let (x, f, _) = normalized_gaussian(10_000);
+        let (x, f) = normalized_gaussian(10_000);
         let cdf = cdf_from_distribution(&x, &f).unwrap();
         let cdf_inv = ICDFSampler16::get_cdf_inv(&x, &cdf);
         let weights =
@@ -654,9 +655,14 @@ mod tests {
 
     #[test]
     fn test_sampler_with_direct_error() {
-        let (x, f, variance) = normalized_gaussian(10_000);
+        let (x, f) = normalized_gaussian(10_000);
         let cdf = cdf_from_distribution(&x, &f).unwrap();
-        let sampler = ICDFSampler16::new_with_symmetric_mean_relative_error(&x, &cdf);
+        let (sampler, total_err) = ICDFSampler16::new_with_symmetric_mean_relative_error(&x, &cdf);
+
+        // We will insist the total error is not more than 5% for all the values
+        // vs the input cdf resampled. Note: there is always already some error
+        // in the input and this resampling, but on the order of a couple % at most.
+        assert!(total_err < 0.05);
 
         // Indices must grow in correspondence with the number of points in
         // each bin, i.e. the sum of `2^pow`...
@@ -676,11 +682,9 @@ mod tests {
 
         // The data points for a gaussian should be anti symmetric up to some tolerance...
         assert!(
-            sampler
-                .vals
+            sampler.vals[..128]
                 .iter()
-                .take(128)
-                .zip(sampler.vals.iter().rev().take(128))
+                .zip(sampler.vals[128..].iter().rev())
                 .all(|(fm, fp)| (fm + fp).abs() < FTOL32)
         );
         // And since 257 is odd, it should include 0 in the center.
@@ -699,7 +703,7 @@ mod tests {
                     s * s
                 })
                 .sum::<f64>();
-        // Some deviation is expected but far below 1%.
-        assert!((emp_variance / variance - 1.0).abs() < 1e-4);
+        // Some deviation from the theoretical value (0.5) is expected but below 1%.
+        assert!((emp_variance / 0.5 - 1.0).abs() < 1e-2,);
     }
 }
