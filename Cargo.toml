@@ -1,6 +1,11 @@
 [package]
-name = "ICDFSampler16"
+name = "icdf_sampler_16"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+pyo3 = { version = "0.21", features = ["extension-module"], optional = true }
+
+[features]
+default = []
+python = ["dep:pyo3"]

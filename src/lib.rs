@@ -1,3 +1,6 @@
+#[cfg(feature = "python")]
+mod python_bridge;
+
 /// Generates a vector of `count` of linear samples inside the interval `[xmin, xmax]`;
 /// edges included.
 /// Ranges with `xmin` >= `xmax` are allowed. Very large numbers might lead to problems.
