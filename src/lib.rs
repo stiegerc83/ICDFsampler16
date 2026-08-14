@@ -654,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sampler_with_direct_error() {
+    fn test_sampler_with_symmetric_mean_relative_errors() {
         let (x, f) = normalized_gaussian(10_000);
         let cdf = cdf_from_distribution(&x, &f).unwrap();
         let (sampler, total_err) = ICDFSampler16::from_symmetric_mean_relative_errors(&x, &cdf);
