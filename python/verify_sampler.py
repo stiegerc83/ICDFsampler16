@@ -31,7 +31,7 @@ def main():
     theoretical_u = 0.5 * (1.0 + erf(samples))
 
     # The error represents the discrepancy in probability mapping (quantization/interpolation drift)
-    interpolation_error = empirical_u - theoretical_u
+    interpolation_error = abs(empirical_u - theoretical_u)
 
     # --- PLOTTING ---
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
